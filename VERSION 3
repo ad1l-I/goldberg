@@ -1,0 +1,132 @@
+/*
+  Capacitive-Touch Arduino Keyboard Piano
+  Plays piano tones through a buzzer when the user taps touch-sensitive piano "keys"
+  Created  18 May 2013
+  Modified 23 May 2013
+  by Tyler Crumpton and Nicholas Jones
+  This code is released to the public domain. For information about the circuit,
+  visit the Instructable tutorial at http://www.instructables.com/id/Capacitive-Touch-Arduino-Keyboard-Piano/
+*/
+//10 is the magnet 
+//12 is the inductor 
+
+#include <CapacitiveSensor.h>
+#include "pitches.h"
+
+unsigned long previousMillis = 0; // store the last time a measurement was taken
+const long interval = 1000; // Interval at which to perform the measurement (in milliseconds)
+int CODE_LOCK = 0; // initialize the code lock number
+int CODE = 0; // initialize the code number 
+
+#define FREQUENCY_PIN 12
+#define MAG_PIN 10
+/////////////////////////////////// metal detector code added above ^^^^^^
+#define COMMON_PIN      2    // The common 'send' pin for all keys
+#define BUZZER_PIN      A4   // The output pin for the piezo buzzer
+#define NUM_OF_SAMPLES  10   // Higher number means more delay but more consistent readings
+#define CAP_THRESHOLD   150  // Capactive reading that triggers a note (adjust to fit your needs)
+#define NUM_OF_KEYS     4    // Number of keys that are on the keyboard
+#define LED_PIN         7    // The output pin for the LED indicating correct sequence
+#define POWER_LED_PIN   8    // The output pin for the LED indicating power
+
+// This macro creates a capacitance "key" sensor object for each key on the piano keyboard:
+#define CS(Y) CapacitiveSensor(2, Y)
+
+// Each key corresponds to a note, which are defined here.
+int notes[] = {NOTE_C4, NOTE_D4, NOTE_G4, NOTE_A4}; // C-Major scale
+
+int keyArray[7]; // An empty array that holds 5 key entries
+int correctSequence[] = {0, 0, 2, 2, 3, 3, 2}; // An array that holds the correct sequence
+int idx = 0; // An index value that iterates through keyArray
+
+// Defines the pins that the keys are connected to:
+CapacitiveSensor keys[] = {CS(3), CS(4), CS(5), CS(6)};
+
+void setup() {
+  Serial.begin(9600);
+  // Turn off autocalibrate on all channels:
+  for (int keyNumber = 0; keyNumber < NUM_OF_KEYS; ++keyNumber) {
+    keys[keyNumber].set_CS_AutocaL_Millis(0xFFFFFFFF);
+  }
+  // NEW CODE >>>>
+  pinMode(FREQUENCY_PIN, INPUT);
+  pinMode(MAG_PIN, OUTPUT);
+
+  digitalWrite(MAG_PIN, HIGH);
+  // NEW CODE ^^^^
+  // Set the buzzer as an output:
+  pinMode(BUZZER_PIN, OUTPUT);
+  // Set the LED pins as output:
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(POWER_LED_PIN, OUTPUT);
+
+  // Set the LED initial values
+  digitalWrite(LED_PIN, LOW);         // Sequence LED is off initially
+  digitalWrite(POWER_LED_PIN, HIGH); // Power LED is on as long as Arduino is powered
+}
+
+int ontime, offtime, duty;
+float frequency;
+float NORMAL_FREQ = 10000;
+
+void loop() {    
+  // Loop through each key:
+  for (int keyNumber = 0; keyNumber < NUM_OF_KEYS; ++keyNumber) {
+    // If the capacitance reading is greater than the threshold, play a note:
+    if (keys[keyNumber].capacitiveSensor(NUM_OF_SAMPLES) > CAP_THRESHOLD) {
+      tone(BUZZER_PIN, notes[keyNumber]); // Plays the note corresponding to the key pressed
+      keyArray[idx] = keyNumber; // Stores key played in array
+      idx++; // Increases the index of array for the next key to be stored
+      delay(500);
+      noTone(BUZZER_PIN);
+    }
+    if (idx >= 7) { // After 7 notes are pressed
+      if (checkSequence()) { // If checkSequence is true, turn on LED
+        digitalWrite(LED_PIN, HIGH);
+        digitalWrite(POWER_LED_PIN, LOW);
+        delay(10000);
+        digitalWrite(LED_PIN, LOW);
+        digitalWrite(POWER_LED_PIN, HIGH);
+      }
+      // Reset after checking sequence
+      memset(keyArray, 0, sizeof(keyArray));
+      idx = 0; // Reset index
+    }
+  }
+
+  int durationHigh = pulseIn(FREQUENCY_PIN, HIGH);
+  int durationLow = pulseIn(FREQUENCY_PIN, LOW);
+  unsigned long period = durationHigh + durationLow;
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - previousMillis >= interval) {
+    // Save the current time as the last measurement time
+    previousMillis = currentMillis;
+
+    if (period > 0) {
+      frequency = 1000000.0 / period;
+      Serial.print(frequency);
+      Serial.println(" Hz");
+
+      if (frequency > 7500 && frequency < 8400) {
+        Serial.print(frequency);
+        Serial.println(" Hz");
+        digitalWrite(MAG_PIN, LOW); 
+        tone(BUZZER_PIN, 1000); // Activates the buzzer at 1kHz
+        delay(1000); // Keeps the buzzer on for 1 second
+        noTone(BUZZER_PIN); // Turns off the buzzer
+      } else {
+        digitalWrite(MAG_PIN, HIGH); 
+      }
+    }
+  }
+}
+
+bool checkSequence() { // Boolean function to compare the input sequence with the correct sequence
+  for (int idx = 0; idx < 7; ++idx) {
+    if (keyArray[idx] != correctSequence[idx]) {
+      return false; // Return false if any key in the sequence doesn't match
+    }
+  }
+  return true;
+}
